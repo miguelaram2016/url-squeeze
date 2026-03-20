@@ -1,7 +1,21 @@
 import { prisma } from '@/lib/prisma'
 import { redirect } from 'next/navigation'
 import { headers } from 'next/headers'
-import geoip from 'geoip-lite'
+
+// Force dynamic - geoip-lite doesn't work with static generation
+export const dynamic = 'force-dynamic'
+
+// Lazy load geoip only on-demand (for production builds)
+function getCountry(ip: string): string | null {
+  try {
+    // Dynamic import to avoid build-time issues
+    const geoip = require('geoip-lite')
+    const geo = geoip.lookup(ip.replace(/,.*$/, ''))
+    return geo?.country || null
+  } catch {
+    return null
+  }
+}
 
 export default async function RedirectPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
@@ -20,8 +34,7 @@ export default async function RedirectPage({ params }: { params: Promise<{ slug:
   
   let country: string | null = null
   try {
-    const geo = geoip.lookup(ip.replace(/,.*$/, ''))
-    if (geo && geo.country) country = geo.country
+    country = getCountry(ip)
   } catch {}
   
   await prisma.click.create({

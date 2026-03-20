@@ -38,6 +38,7 @@ export default async function StatsPage({ params }: { params: Promise<{ slug: st
 
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'
   const shortUrl = `${baseUrl}/${slug}`
+  const totalClicks = link.clickRecords.length
 
   return (
     <main className="min-h-screen bg-background">
@@ -52,14 +53,14 @@ export default async function StatsPage({ params }: { params: Promise<{ slug: st
             <p className="text-muted-foreground text-sm truncate max-w-lg">{link.url}</p>
           </div>
           <Badge variant="secondary" className="text-sm">
-            {link.clicks.length} clicks
+            {totalClicks} clicks
           </Badge>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
           <Card>
             <CardContent className="p-4 text-center">
-              <p className="text-3xl font-bold">{link.clicks.length}</p>
+              <p className="text-3xl font-bold">{totalClicks}</p>
               <p className="text-xs text-muted-foreground mt-1">Total Clicks</p>
             </CardContent>
           </Card>
@@ -149,11 +150,14 @@ export default async function StatsPage({ params }: { params: Promise<{ slug: st
               </div>
               <div>
                 <p className="text-sm text-muted-foreground mb-2">Scan to open short link</p>
-                <Button asChild variant="outline" size="sm">
-                  <a href={shortUrl} target="_blank" rel="noopener noreferrer">
-                    Open link
-                  </a>
-                </Button>
+                <a
+                  href={shortUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex h-8 px-3 items-center justify-center rounded-md border border-input bg-background text-sm text-foreground hover:bg-muted transition-colors"
+                >
+                  Open link
+                </a>
               </div>
             </div>
           </CardContent>

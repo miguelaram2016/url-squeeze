@@ -168,9 +168,9 @@ export default function HomePage() {
                   <Button variant="ghost" size="sm" className="h-7">
                     <Copy className="w-3 h-3 mr-1" /> Copy
                   </Button>
-                  <Button variant="ghost" size="sm" className="h-7" asChild>
-                    <Link href={`/s/${link.slug}`}>Stats</Link>
-                  </Button>
+                  <Link href={`/s/${link.slug}`} className="inline-flex h-7 items-center px-2.5 rounded-md text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
+                    Stats
+                  </Link>
                 </div>
               </div>
             ))}
@@ -179,9 +179,9 @@ export default function HomePage() {
 
         {/* Dashboard link */}
         <div className="text-center mt-8">
-          <Button variant="link" asChild className="text-muted-foreground text-sm">
-            <Link href="/dashboard">Open dashboard →</Link>
-          </Button>
+          <Link href="/dashboard" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+            Open dashboard →
+          </Link>
         </div>
       </div>
 

@@ -14,7 +14,7 @@ export default async function DashboardPage() {
 
   const links = await prisma.link.findMany({
     orderBy: { createdAt: 'desc' },
-    include: { _count: { select: { clicks: true } } }
+    include: { _count: { select: { clickRecords: true } } }
   })
 
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'
@@ -30,9 +30,9 @@ export default async function DashboardPage() {
             </p>
           </div>
           <div className="flex gap-3">
-            <Button variant="outline" asChild>
-              <Link href="/">← Shorten new link</Link>
-            </Button>
+            <Link href="/">
+              <Button variant="outline" size="sm">← Shorten new link</Button>
+            </Link>
           </div>
         </div>
 
@@ -83,33 +83,27 @@ export default async function DashboardPage() {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-center">
-                        <span className="text-sm font-medium">{link._count.clicks}</span>
+                        <span className="text-sm font-medium">{link._count.clickRecords}</span>
                       </td>
                       <td className="px-4 py-3 text-sm text-muted-foreground">
                         {link.createdAt.toLocaleDateString()}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-end gap-1">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                            asChild
+                          <a
+                            href={`${baseUrl}/${link.slug}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
                           >
-                            <a href={`${baseUrl}/${link.slug}`} target="_blank" rel="noopener noreferrer">
-                              <ExternalLink className="w-3 h-3" />
-                            </a>
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                            asChild
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                          <Link
+                            href={`/s/${link.slug}`}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
                           >
-                            <Link href={`/s/${link.slug}`}>
-                              <ExternalLink className="w-3 h-3" />
-                            </Link>
-                          </Button>
+                            <ExternalLink className="w-3 h-3" />
+                          </Link>
                           <Button
                             variant="ghost"
                             size="icon"

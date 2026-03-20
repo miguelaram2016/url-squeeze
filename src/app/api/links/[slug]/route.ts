@@ -10,7 +10,7 @@ export async function GET(
   const link = await prisma.link.findUnique({
     where: { slug },
     include: {
-      clicks: {
+      clickRecords: {
         orderBy: { createdAt: 'desc' },
         take: 100,
       }
@@ -23,7 +23,7 @@ export async function GET(
   const referrerStats = {} as Record<string, number>
   const deviceStats = {} as Record<string, number>
   
-  for (const click of link.clicks) {
+  for (const click of link.clickRecords) {
     if (click.country) countryStats[click.country] = (countryStats[click.country] || 0) + 1
     if (click.referrer) referrerStats[click.referrer] = (referrerStats[click.referrer] || 0) + 1
     if (click.userAgent) {
@@ -38,7 +38,7 @@ export async function GET(
     slug: link.slug,
     url: link.url,
     clicks: link.clicks,
-    clickRecords: link.clickRecords.length,
+    clickCount: link.clickRecords.length,
     createdAt: link.createdAt,
     active: link.active,
     stats: {
