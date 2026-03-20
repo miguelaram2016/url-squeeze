@@ -1,16 +1,34 @@
 import { PrismaClient } from '@prisma/client'
 
-// Workaround: The Vercel/Neon integration adds channel_binding=require which causes
-// the pg driver to hang in serverless environments. Strip it from the connection string.
-function getCleanDatabaseUrl(): string {
-  const url = process.env.DATABASE_URL
-  if (!url) throw new Error('DATABASE_URL not set')
-  // Remove channel_binding=require which causes issues with pg driver in serverless
-  return url.replace(/&?channel_binding=require/g, '')
+// Workaround: Try different Neon connection URLs to find one that works
+function getDatabaseUrl(): string {
+  // Try the unpooled endpoint first (direct connection, no pooler)
+  const unpooledUrl = process.env.DATABASE_URL_UNPOOLED
+  const prismaUrl = process.env.POSTGRES_PRISMA_URL
+  const databaseUrl = process.env.DATABASE_URL
+  
+  // Try unpooled first - it bypasses the pooler which can have connectivity issues
+  if (unpooledUrl) {
+    console.log('Using unpooled endpoint')
+    return unpooledUrl.replace(/&?channel_binding=require/g, '')
+  }
+  
+  // Fall back to POSTGRES_PRISMA_URL (has connect_timeout)
+  if (prismaUrl) {
+    console.log('Using POSTGRES_PRISMA_URL')
+    return prismaUrl.replace(/&?channel_binding=require/g, '')
+  }
+  
+  // Last resort: DATABASE_URL
+  if (databaseUrl) {
+    console.log('Using DATABASE_URL')
+    return databaseUrl.replace(/&?channel_binding=require/g, '')
+  }
+  
+  throw new Error('No database URL available')
 }
 
-// Use the cleaned URL for Prisma
-const cleanUrl = getCleanDatabaseUrl()
+const cleanUrl = getDatabaseUrl()
 
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient }
 
