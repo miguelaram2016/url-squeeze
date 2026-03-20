@@ -37,7 +37,8 @@ export async function GET(
   return NextResponse.json({
     slug: link.slug,
     url: link.url,
-    clicks: link.clicks.length,
+    clicks: link.clicks,
+    clickRecords: link.clickRecords.length,
     createdAt: link.createdAt,
     active: link.active,
     stats: {

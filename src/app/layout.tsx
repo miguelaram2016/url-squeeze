@@ -1,9 +1,10 @@
 import type { Metadata } from 'next'
 import './globals.css'
-import { Geist } from "next/font/google";
+import { Inter } from "next/font/google";
 import { cn } from "@/lib/utils";
+import Providers from "@/components/providers";
 
-const geist = Geist({subsets:['latin'],variable:'--font-sans'});
+const inter = Inter({ subsets: ['latin'], variable: '--font-sans' });
 
 export const metadata: Metadata = {
   title: 'URL Squeeze — Shorten links, get analytics',
@@ -16,9 +17,11 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en" className={cn("font-sans", geist.variable)}>
-      <body className="antialiased">
-        {children}
+    <html lang="en" className="dark">
+      <body className={cn("antialiased min-h-screen bg-background font-sans", inter.variable)}>
+        <Providers>
+          {children}
+        </Providers>
       </body>
     </html>
   )
