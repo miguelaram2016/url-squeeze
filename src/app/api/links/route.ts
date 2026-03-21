@@ -40,9 +40,9 @@ export async function GET(request: NextRequest) {
 // POST /api/links - Create a new short link (public, rate-limited)
 export async function POST(request: NextRequest) {
   try {
-    // Rate limit check
+    // Rate limit check (supports both IP-based and API key auth)
     const ip = getClientIP(request)
-    const { allowed, remaining, resetAt } = await checkRateLimit(ip)
+    const { allowed, remaining, resetAt } = await checkRateLimit(request, ip)
     
     if (!allowed) {
       return NextResponse.json(
@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { url, slug: customSlug } = body
+    const { url, slug: customSlug, splash = true } = body
 
     if (!url) {
       return NextResponse.json({ error: 'URL is required' }, { status: 400 })
@@ -82,17 +82,17 @@ export async function POST(request: NextRequest) {
       }
       // If auto-generated slug conflicts, try again with a new one
       const newSlug = nanoid(6)
-      return createLink(newSlug, url, remaining)
+      return createLink(newSlug, url, remaining, splash)
     }
 
-    return createLink(slug, url, remaining)
+    return createLink(slug, url, remaining, splash)
   } catch (error) {
     console.error('Error creating link:', error)
     return NextResponse.json({ error: 'Failed to create link' }, { status: 500 })
   }
 }
 
-async function createLink(slug: string, url: string, remaining: number = 9) {
+async function createLink(slug: string, url: string, remaining: number = 9, splash: boolean = true) {
   const now = new Date().toISOString()
   
   // Store the redirect URL
@@ -103,6 +103,7 @@ async function createLink(slug: string, url: string, remaining: number = 9) {
     url,
     slug,
     createdAt: now,
+    splash: splash ? '1' : '0',
   })
   
   // Initialize click count
@@ -115,6 +116,7 @@ async function createLink(slug: string, url: string, remaining: number = 9) {
     id: slug,
     slug,
     url,
+    splash,
     createdAt: now,
     clicks: 0,
   }, { 
