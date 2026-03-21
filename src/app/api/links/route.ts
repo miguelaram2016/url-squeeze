@@ -71,8 +71,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: `This URL cannot be shortened: ${blockResult.reason}` }, { status: 403 })
     }
 
-    // Generate slug (4 chars for shorter links)
-    const slug = customSlug || nanoid(4)
+    // Generate slug (6 chars for better monetization potential)
+    const slug = customSlug || nanoid(6)
 
     // Check if slug already exists
     const existing = await redis.exists(`${REDIRECT_PREFIX}${slug}`)
@@ -81,7 +81,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Slug already taken' }, { status: 409 })
       }
       // If auto-generated slug conflicts, try again with a new one
-      const newSlug = nanoid(5)
+      const newSlug = nanoid(6)
       return createLink(newSlug, url, remaining)
     }
 
