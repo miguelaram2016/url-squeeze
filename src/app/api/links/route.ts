@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { nanoid } from 'nanoid'
 import { redis, REDIRECT_PREFIX, CLICKS_PREFIX, INFO_PREFIX, SLUG_INDEX, USER_LINKS_PREFIX } from '@/lib/redis'
+import { checkRateLimit, getClientIP } from '@/lib/rate-limit'
 
 // GET /api/links - List all links for a user (or recent if not authenticated)
 export async function GET(request: NextRequest) {
@@ -35,9 +36,20 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/links - Create a new short link
+// POST /api/links - Create a new short link (public, rate-limited)
 export async function POST(request: NextRequest) {
   try {
+    // Rate limit check
+    const ip = getClientIP(request)
+    const { allowed, remaining, resetAt } = await checkRateLimit(ip)
+    
+    if (!allowed) {
+      return NextResponse.json(
+        { error: 'Too many requests. Please try again later.', retryAfter: Math.ceil((resetAt - Date.now()) / 1000) },
+        { status: 429, headers: { 'Retry-After': String(Math.ceil((resetAt - Date.now()) / 1000)) } }
+      )
+    }
+
     const body = await request.json()
     const { url, slug: customSlug } = body
 
@@ -52,8 +64,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid URL' }, { status: 400 })
     }
 
-    // Generate slug
-    const slug = customSlug || nanoid(7)
+    // Generate slug (shorter: 5 chars)
+    const slug = customSlug || nanoid(5)
 
     // Check if slug already exists
     const existing = await redis.exists(`${REDIRECT_PREFIX}${slug}`)
@@ -62,18 +74,18 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Slug already taken' }, { status: 409 })
       }
       // If auto-generated slug conflicts, try again with a new one
-      const newSlug = nanoid(8)
-      return createLink(newSlug, url)
+      const newSlug = nanoid(6)
+      return createLink(newSlug, url, remaining)
     }
 
-    return createLink(slug, url)
+    return createLink(slug, url, remaining)
   } catch (error) {
     console.error('Error creating link:', error)
     return NextResponse.json({ error: 'Failed to create link' }, { status: 500 })
   }
 }
 
-async function createLink(slug: string, url: string) {
+async function createLink(slug: string, url: string, remaining: number = 9) {
   const now = new Date().toISOString()
   
   // Store the redirect URL
@@ -98,5 +110,10 @@ async function createLink(slug: string, url: string) {
     url,
     createdAt: now,
     clicks: 0,
-  }, { status: 201 })
+  }, { 
+    status: 201,
+    headers: {
+      'X-RateLimit-Remaining': String(remaining),
+    }
+  })
 }
