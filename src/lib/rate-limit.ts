@@ -1,4 +1,5 @@
 import { Redis } from '@upstash/redis'
+import { isWhitelisted } from './whitelist'
 
 const redis = new Redis({
   url: process.env.UPSTASH_REDIS_REST_URL?.trim() || '',
@@ -7,7 +8,13 @@ const redis = new Redis({
 
 // Rate limit by IP
 // 10 requests per minute, 100 per day
-export async function checkRateLimit(ip: string): Promise<{ allowed: boolean; remaining: number; resetAt: number }> {
+// Whitelisted IPs bypass rate limits
+export async function checkRateLimit(ip: string): Promise<{ allowed: boolean; remaining: number; resetAt: number; whitelisted: boolean }> {
+  // Check whitelist first
+  if (isWhitelisted(ip)) {
+    return { allowed: true, remaining: 999, resetAt: Date.now() + 86400000, whitelisted: true }
+  }
+
   const now = Date.now()
   const minuteKey = `ratelimit:min:${ip}`
   const dayKey = `ratelimit:day:${ip}`
@@ -21,12 +28,12 @@ export async function checkRateLimit(ip: string): Promise<{ allowed: boolean; re
   // Check limits
   if (minuteUsed >= 10) {
     const ttl = await redis.ttl(minuteKey)
-    return { allowed: false, remaining: 0, resetAt: now + (ttl > 0 ? ttl * 1000 : 60000) }
+    return { allowed: false, remaining: 0, resetAt: now + (ttl > 0 ? ttl * 1000 : 60000), whitelisted: false }
   }
   
   if (dayUsed >= 100) {
     const ttl = await redis.ttl(dayKey)
-    return { allowed: false, remaining: 0, resetAt: now + (ttl > 0 ? ttl * 1000 : 86400000) }
+    return { allowed: false, remaining: 0, resetAt: now + (ttl > 0 ? ttl * 1000 : 86400000), whitelisted: false }
   }
 
   // Increment counters (use pipeline for atomicity)
@@ -40,7 +47,8 @@ export async function checkRateLimit(ip: string): Promise<{ allowed: boolean; re
   return { 
     allowed: true, 
     remaining: Math.min(9 - minuteUsed, 99 - dayUsed), 
-    resetAt: now + 60000 
+    resetAt: now + 60000,
+    whitelisted: false 
   }
 }
 

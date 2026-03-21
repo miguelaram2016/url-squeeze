@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { nanoid } from 'nanoid'
 import { redis, REDIRECT_PREFIX, CLICKS_PREFIX, INFO_PREFIX, SLUG_INDEX, USER_LINKS_PREFIX } from '@/lib/redis'
 import { checkRateLimit, getClientIP } from '@/lib/rate-limit'
+import { isURLBlocked } from '@/lib/blocklist'
 
 // GET /api/links - List all links for a user (or recent if not authenticated)
 export async function GET(request: NextRequest) {
@@ -64,8 +65,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid URL' }, { status: 400 })
     }
 
-    // Generate slug (shorter: 5 chars)
-    const slug = customSlug || nanoid(5)
+    // Check blocklist
+    const blockResult = isURLBlocked(url)
+    if (blockResult.blocked) {
+      return NextResponse.json({ error: `This URL cannot be shortened: ${blockResult.reason}` }, { status: 403 })
+    }
+
+    // Generate slug (4 chars for shorter links)
+    const slug = customSlug || nanoid(4)
 
     // Check if slug already exists
     const existing = await redis.exists(`${REDIRECT_PREFIX}${slug}`)
@@ -74,7 +81,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Slug already taken' }, { status: 409 })
       }
       // If auto-generated slug conflicts, try again with a new one
-      const newSlug = nanoid(6)
+      const newSlug = nanoid(5)
       return createLink(newSlug, url, remaining)
     }
 
