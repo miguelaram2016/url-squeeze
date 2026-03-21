@@ -1,50 +1,61 @@
-import { NextResponse } from 'next/server'
-import { prisma } from '@/lib/prisma'
+import { NextRequest, NextResponse } from 'next/server'
+import { redis, REDIRECT_PREFIX, CLICKS_PREFIX, INFO_PREFIX } from '@/lib/redis'
 
+// GET /api/links/[slug] - Get link info and stats
 export async function GET(
-  _req: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ slug: string }> }
 ) {
-  const { slug } = await params
-  
-  const link = await prisma.link.findUnique({
-    where: { slug },
-    include: {
-      clickRecords: {
-        orderBy: { createdAt: 'desc' },
-        take: 100,
-      }
+  try {
+    const { slug } = await params
+    
+    const [redirectUrl, info, clicks] = await Promise.all([
+      redis.get<string>(`${REDIRECT_PREFIX}${slug}`),
+      redis.hgetall(`${INFO_PREFIX}${slug}`),
+      redis.get<number>(`${CLICKS_PREFIX}${slug}`),
+    ])
+
+    if (!redirectUrl) {
+      return NextResponse.json({ error: 'Link not found' }, { status: 404 })
     }
-  })
-  
-  if (!link) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  
-  const countryStats = {} as Record<string, number>
-  const referrerStats = {} as Record<string, number>
-  const deviceStats = {} as Record<string, number>
-  
-  for (const click of link.clickRecords) {
-    if (click.country) countryStats[click.country] = (countryStats[click.country] || 0) + 1
-    if (click.referrer) referrerStats[click.referrer] = (referrerStats[click.referrer] || 0) + 1
-    if (click.userAgent) {
-      const ua = click.userAgent.toLowerCase()
-      if (ua.includes('mobile') || ua.includes('android')) deviceStats['Mobile'] = (deviceStats['Mobile'] || 0) + 1
-      else if (ua.includes('tablet') || ua.includes('ipad')) deviceStats['Tablet'] = (deviceStats['Tablet'] || 0) + 1
-      else deviceStats['Desktop'] = (deviceStats['Desktop'] || 0) + 1
-    }
+
+    return NextResponse.json({
+      id: slug,
+      slug,
+      url: redirectUrl,
+      createdAt: (info?.createdAt as string) || new Date().toISOString(),
+      clicks: clicks || 0,
+    })
+  } catch (error) {
+    console.error('Error fetching link:', error)
+    return NextResponse.json({ error: 'Failed to fetch link' }, { status: 500 })
   }
-  
-  return NextResponse.json({
-    slug: link.slug,
-    url: link.url,
-    clicks: link.clicks,
-    clickCount: link.clickRecords.length,
-    createdAt: link.createdAt,
-    active: link.active,
-    stats: {
-      countries: countryStats,
-      referrers: referrerStats,
-      devices: deviceStats,
+}
+
+// DELETE /api/links/[slug] - Delete a link
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ slug: string }> }
+) {
+  try {
+    const { slug } = await params
+    
+    // Check if link exists
+    const exists = await redis.exists(`${REDIRECT_PREFIX}${slug}`)
+    if (!exists) {
+      return NextResponse.json({ error: 'Link not found' }, { status: 404 })
     }
-  })
+
+    // Delete all related keys
+    await Promise.all([
+      redis.del(`${REDIRECT_PREFIX}${slug}`),
+      redis.del(`${INFO_PREFIX}${slug}`),
+      redis.del(`${CLICKS_PREFIX}${slug}`),
+    ])
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error('Error deleting link:', error)
+    return NextResponse.json({ error: 'Failed to delete link' }, { status: 500 })
+  }
 }

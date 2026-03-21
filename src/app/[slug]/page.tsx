@@ -1,14 +1,13 @@
-import { prisma } from '@/lib/prisma'
+import { redis, REDIRECT_PREFIX, CLICKS_PREFIX } from '@/lib/redis'
 import { redirect } from 'next/navigation'
 import { headers } from 'next/headers'
 
 // Force dynamic - geoip-lite doesn't work with static generation
 export const dynamic = 'force-dynamic'
 
-// Lazy load geoip only on-demand (for production builds)
+// Lazy load geoip only on-demand
 function getCountry(ip: string): string | null {
   try {
-    // Dynamic import to avoid build-time issues
     const geoip = require('geoip-lite')
     const geo = geoip.lookup(ip.replace(/,.*$/, ''))
     return geo?.country || null
@@ -20,13 +19,14 @@ function getCountry(ip: string): string | null {
 export default async function RedirectPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
   
-  const link = await prisma.link.findUnique({ where: { slug } })
+  // Look up the redirect URL
+  const url = await redis.get<string>(`${REDIRECT_PREFIX}${slug}`)
   
-  if (!link || !link.active) {
+  if (!url) {
     redirect('/')
   }
   
-  // Record click
+  // Record click - increment counter and store click info
   const h = await headers()
   const ip = h.get('x-forwarded-for') || h.get('x-real-ip') || 'unknown'
   const referer = h.get('referer') || ''
@@ -37,9 +37,11 @@ export default async function RedirectPage({ params }: { params: Promise<{ slug:
     country = getCountry(ip)
   } catch {}
   
-  await prisma.click.create({
-    data: { linkId: link.id, ip, referrer: referer, userAgent, country }
-  })
+  // Increment click count
+  await redis.incr(`${CLICKS_PREFIX}${slug}`)
   
-  redirect(link.url)
+  // TODO: Store click details (referrer, country, userAgent) if needed
+  // For now, just increment the counter. Full click log can be added later.
+  
+  redirect(url)
 }

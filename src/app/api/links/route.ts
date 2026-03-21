@@ -1,39 +1,102 @@
-import { NextResponse } from 'next/server'
-import { prisma } from '@/lib/prisma'
+import { NextRequest, NextResponse } from 'next/server'
 import { nanoid } from 'nanoid'
-import { auth } from '@/auth'
+import { redis, REDIRECT_PREFIX, CLICKS_PREFIX, INFO_PREFIX, SLUG_INDEX, USER_LINKS_PREFIX } from '@/lib/redis'
 
-export async function GET() {
-  const session = await auth()
-  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  
-  const links = await prisma.link.findMany({
-    orderBy: { createdAt: 'desc' },
-    include: { _count: { select: { clickRecords: true } } }
-  })
-  
-  return NextResponse.json(links)
+// GET /api/links - List all links for a user (or recent if not authenticated)
+export async function GET(request: NextRequest) {
+  try {
+    // For now, return recent links from the index
+    // In production, you'd filter by userId for authenticated requests
+    const slugs = await redis.smembers(SLUG_INDEX)
+    
+    if (!slugs || slugs.length === 0) {
+      return NextResponse.json([])
+    }
+
+    // Get info for each slug (most recent first, limit 50)
+    const links = await Promise.all(
+      slugs.slice(-50).reverse().map(async (slug) => {
+        const info = await redis.hgetall(`${INFO_PREFIX}${slug}`)
+        const clicks = await redis.get<number>(`${CLICKS_PREFIX}${slug}`)
+        return {
+          id: slug,
+          slug,
+          url: (info?.url as string) || '',
+          createdAt: (info?.createdAt as string) || new Date().toISOString(),
+          clicks: clicks || 0,
+        }
+      })
+    )
+
+    return NextResponse.json(links)
+  } catch (error) {
+    console.error('Error fetching links:', error)
+    return NextResponse.json({ error: 'Failed to fetch links' }, { status: 500 })
+  }
 }
 
-export async function POST(req: Request) {
-  const { url, slug } = await req.json()
-  
-  if (!url) return NextResponse.json({ error: 'URL required' }, { status: 400 })
-  
-  try { new URL(url) } catch {
-    return NextResponse.json({ error: 'Invalid URL' }, { status: 400 })
+// POST /api/links - Create a new short link
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json()
+    const { url, slug: customSlug } = body
+
+    if (!url) {
+      return NextResponse.json({ error: 'URL is required' }, { status: 400 })
+    }
+
+    // Validate URL
+    try {
+      new URL(url)
+    } catch {
+      return NextResponse.json({ error: 'Invalid URL' }, { status: 400 })
+    }
+
+    // Generate slug
+    const slug = customSlug || nanoid(7)
+
+    // Check if slug already exists
+    const existing = await redis.exists(`${REDIRECT_PREFIX}${slug}`)
+    if (existing) {
+      if (customSlug) {
+        return NextResponse.json({ error: 'Slug already taken' }, { status: 409 })
+      }
+      // If auto-generated slug conflicts, try again with a new one
+      const newSlug = nanoid(8)
+      return createLink(newSlug, url)
+    }
+
+    return createLink(slug, url)
+  } catch (error) {
+    console.error('Error creating link:', error)
+    return NextResponse.json({ error: 'Failed to create link' }, { status: 500 })
   }
+}
+
+async function createLink(slug: string, url: string) {
+  const now = new Date().toISOString()
   
-  const finalSlug = slug || nanoid(6)
+  // Store the redirect URL
+  await redis.set(`${REDIRECT_PREFIX}${slug}`, url)
   
-  const existing = await prisma.link.findUnique({ where: { slug: finalSlug } })
-  if (existing) {
-    return NextResponse.json({ error: 'Slug already taken' }, { status: 409 })
-  }
-  
-  const link = await prisma.link.create({
-    data: { slug: finalSlug, url }
+  // Store link info
+  await redis.hset(`${INFO_PREFIX}${slug}`, {
+    url,
+    slug,
+    createdAt: now,
   })
   
-  return NextResponse.json(link)
+  // Initialize click count
+  await redis.set(`${CLICKS_PREFIX}${slug}`, 0)
+  
+  // Add to global slug index
+  await redis.sadd(SLUG_INDEX, slug)
+
+  return NextResponse.json({
+    id: slug,
+    slug,
+    url,
+    createdAt: now,
+    clicks: 0,
+  }, { status: 201 })
 }

@@ -1,6 +1,6 @@
 import { auth } from '@/auth'
 import { redirect } from 'next/navigation'
-import { prisma } from '@/lib/prisma'
+import { redis, REDIRECT_PREFIX, CLICKS_PREFIX, INFO_PREFIX, SLUG_INDEX } from '@/lib/redis'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -12,10 +12,22 @@ export default async function DashboardPage() {
   const session = await auth()
   if (!session) redirect('/auth/signin')
 
-  const links = await prisma.link.findMany({
-    orderBy: { createdAt: 'desc' },
-    include: { _count: { select: { clickRecords: true } } }
-  })
+  // Get all links from Redis
+  const slugs = await redis.smembers(SLUG_INDEX)
+  
+  const links = await Promise.all(
+    slugs.slice(-50).reverse().map(async (slug) => {
+      const info = await redis.hgetall(`${INFO_PREFIX}${slug}`)
+      const clicks = await redis.get<number>(`${CLICKS_PREFIX}${slug}`)
+      return {
+        id: slug,
+        slug,
+        url: (info?.url as string) || '',
+        createdAt: (info?.createdAt as string) || new Date().toISOString(),
+        clicks: clicks || 0,
+      }
+    })
+  )
 
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'
 
@@ -26,7 +38,7 @@ export default async function DashboardPage() {
           <div>
             <h1 className="text-2xl font-bold">Dashboard</h1>
             <p className="text-muted-foreground text-sm mt-1">
-              {session.user?.name}&apos;s links · {links.length} total
+              {links.length} total links
             </p>
           </div>
           <div className="flex gap-3">
@@ -83,10 +95,10 @@ export default async function DashboardPage() {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-center">
-                        <span className="text-sm font-medium">{link._count.clickRecords}</span>
+                        <span className="text-sm font-medium">{link.clicks}</span>
                       </td>
                       <td className="px-4 py-3 text-sm text-muted-foreground">
-                        {link.createdAt.toLocaleDateString()}
+                        {new Date(link.createdAt).toLocaleDateString()}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-end gap-1">
