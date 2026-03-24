@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Copy, ExternalLink, Plus, QrCode } from 'lucide-react'
+import QRModal from './qr-modal'
 import DeleteLinkButton from './delete-button'
 import CreateLinkForm from './create-link-form'
 
@@ -113,13 +114,7 @@ export default async function DashboardPage() {
                             >
                               <ExternalLink className="w-3 h-3" />
                             </a>
-                            <Link
-                              href={`/s/${link.slug}`}
-                              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-                              title="View stats & QR code"
-                            >
-                              <QrCode className="w-3 h-3" />
-                            </Link>
+                            <QRModal slug={link.slug} url={link.url} />
                             <Button
                               variant="ghost"
                               size="icon"
@@ -166,12 +161,7 @@ export default async function DashboardPage() {
                       >
                         <ExternalLink className="w-3 h-3 mr-1" /> Open
                       </a>
-                      <Link
-                        href={`/s/${link.slug}`}
-                        className="inline-flex h-8 px-3 items-center justify-center rounded-md border border-input bg-background text-xs text-foreground hover:bg-muted transition-colors"
-                      >
-                        <QrCode className="w-3 h-3 mr-1" /> QR
-                      </Link>
+                      <QRModal slug={link.slug} url={link.url} />
                       <Button
                         variant="outline"
                         size="sm"
