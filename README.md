@@ -173,4 +173,4 @@ src/
 
 ## License
 
-MIT © [Your Name](https://yourwebsite.com)
+MIT

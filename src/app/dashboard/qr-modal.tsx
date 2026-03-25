@@ -14,7 +14,7 @@ export default function QRModal({ slug, url }: QRModalProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://url-squeeze.vercel.app'
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000')
   const shortUrl = `${baseUrl}/${slug}`
 
   const fetchQR = async () => {
