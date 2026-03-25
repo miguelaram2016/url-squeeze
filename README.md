@@ -54,6 +54,29 @@ Fill in your values:
 | `UPSTASH_REDIS_REST_URL` | [Upstash Redis](https://upstash.com) (free tier) |
 | `UPSTASH_REDIS_REST_TOKEN` | Same Upstash dashboard |
 
+### Base URL setup (important)
+
+This app uses **two URL env vars** and both should match the place where the app is running:
+
+- `NEXTAUTH_URL` → the full app URL used by auth callbacks
+- `NEXT_PUBLIC_BASE_URL` → the public base URL used to generate short links and QR links
+
+**For local development:**
+
+```env
+NEXTAUTH_URL=http://localhost:3000
+NEXT_PUBLIC_BASE_URL=http://localhost:3000
+```
+
+**For production / deployed app:**
+
+```env
+NEXTAUTH_URL=https://your-domain.com
+NEXT_PUBLIC_BASE_URL=https://your-domain.com
+```
+
+If a user deploys their own copy, these are the first values they should change.
+
 ### 3. Run Locally
 
 ```bash
