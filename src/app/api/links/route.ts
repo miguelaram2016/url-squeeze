@@ -1,34 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { nanoid } from 'nanoid'
-import { redis, REDIRECT_PREFIX, CLICKS_PREFIX, INFO_PREFIX, SLUG_INDEX, USER_LINKS_PREFIX } from '@/lib/redis'
+import { redis, CLICKS_PREFIX, INFO_PREFIX, REDIRECT_PREFIX, SLUG_INDEX } from '@/lib/redis'
 import { checkRateLimit, getClientIP } from '@/lib/rate-limit'
 import { isURLBlocked } from '@/lib/blocklist'
+import { getAuthenticatedOwnerId, getLinkRecord, getUserLinksKey, resolveAvailableSlug } from '@/lib/links'
 
-// GET /api/links - List all links for a user (or recent if not authenticated)
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
-    // For now, return recent links from the index
-    // In production, you'd filter by userId for authenticated requests
-    const slugs = await redis.smembers(SLUG_INDEX)
-    
+    const ownerId = await getAuthenticatedOwnerId()
+
+    if (!ownerId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const slugs = await redis.smembers<string[]>(getUserLinksKey(ownerId))
+
     if (!slugs || slugs.length === 0) {
       return NextResponse.json([])
     }
 
-    // Get info for each slug (most recent first, limit 50)
-    const links = await Promise.all(
-      slugs.slice(-50).reverse().map(async (slug) => {
-        const info = await redis.hgetall(`${INFO_PREFIX}${slug}`)
-        const clicks = await redis.get<number>(`${CLICKS_PREFIX}${slug}`)
-        return {
-          id: slug,
-          slug,
-          url: (info?.url as string) || '',
-          createdAt: (info?.createdAt as string) || new Date().toISOString(),
-          clicks: clicks || 0,
-        }
-      })
-    )
+    const records = await Promise.all(slugs.map((slug) => getLinkRecord(slug)))
+    const links = records
+      .filter((record): record is NonNullable<typeof record> => Boolean(record && record.ownerId === ownerId))
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .slice(0, 50)
+      .map(({ id, slug, url, createdAt, clicks }) => ({ id, slug, url, createdAt, clicks }))
 
     return NextResponse.json(links)
   } catch (error) {
@@ -37,13 +32,11 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/links - Create a new short link (public, rate-limited)
 export async function POST(request: NextRequest) {
   try {
-    // Rate limit check (supports both IP-based and API key auth)
     const ip = getClientIP(request)
     const { allowed, remaining, resetAt } = await checkRateLimit(request, ip)
-    
+
     if (!allowed) {
       return NextResponse.json(
         { error: 'Too many requests. Please try again later.', retryAfter: Math.ceil((resetAt - Date.now()) / 1000) },
@@ -58,59 +51,58 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'URL is required' }, { status: 400 })
     }
 
-    // Validate URL
     try {
       new URL(url)
     } catch {
       return NextResponse.json({ error: 'Invalid URL' }, { status: 400 })
     }
 
-    // Check blocklist
     const blockResult = isURLBlocked(url)
     if (blockResult.blocked) {
       return NextResponse.json({ error: `This URL cannot be shortened: ${blockResult.reason}` }, { status: 403 })
     }
 
-    // Generate slug (6 chars for better monetization potential)
-    const slug = customSlug || nanoid(6)
+    const ownerId = await getAuthenticatedOwnerId()
+    const slugResult = await resolveAvailableSlug(customSlug)
 
-    // Check if slug already exists
-    const existing = await redis.exists(`${REDIRECT_PREFIX}${slug}`)
-    if (existing) {
-      if (customSlug) {
-        return NextResponse.json({ error: 'Slug already taken' }, { status: 409 })
-      }
-      // If auto-generated slug conflicts, try again with a new one
-      const newSlug = nanoid(6)
-      return createLink(newSlug, url, remaining, splash)
+    if ('error' in slugResult) {
+      const status = slugResult.error === 'Slug already taken' ? 409 : 400
+      return NextResponse.json({ error: slugResult.error }, { status })
     }
 
-    return createLink(slug, url, remaining, splash)
+    return createLink(slugResult.slug, url, remaining, splash, ownerId)
   } catch (error) {
     console.error('Error creating link:', error)
     return NextResponse.json({ error: 'Failed to create link' }, { status: 500 })
   }
 }
 
-async function createLink(slug: string, url: string, remaining: number = 9, splash: boolean = true) {
+async function createLink(
+  slug: string,
+  url: string,
+  remaining = 9,
+  splash = true,
+  ownerId: string | null = null,
+) {
   const now = new Date().toISOString()
-  
-  // Store the redirect URL
-  await redis.set(`${REDIRECT_PREFIX}${slug}`, url)
-  
-  // Store link info
-  await redis.hset(`${INFO_PREFIX}${slug}`, {
+
+  const pipeline = redis.pipeline()
+  pipeline.set(`${REDIRECT_PREFIX}${slug}`, url)
+  pipeline.hset(`${INFO_PREFIX}${slug}`, {
     url,
     slug,
     createdAt: now,
     splash: splash ? '1' : '0',
+    ...(ownerId ? { ownerId } : {}),
   })
-  
-  // Initialize click count
-  await redis.set(`${CLICKS_PREFIX}${slug}`, 0)
-  
-  // Add to global slug index
-  await redis.sadd(SLUG_INDEX, slug)
+  pipeline.set(`${CLICKS_PREFIX}${slug}`, 0)
+  pipeline.sadd(SLUG_INDEX, slug)
+
+  if (ownerId) {
+    pipeline.sadd(getUserLinksKey(ownerId), slug)
+  }
+
+  await pipeline.exec()
 
   return NextResponse.json({
     id: slug,
@@ -119,10 +111,11 @@ async function createLink(slug: string, url: string, remaining: number = 9, spla
     splash,
     createdAt: now,
     clicks: 0,
-  }, { 
+    ownerId,
+  }, {
     status: 201,
     headers: {
       'X-RateLimit-Remaining': String(remaining),
-    }
+    },
   })
 }

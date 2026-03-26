@@ -1,18 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { redis, REDIRECT_PREFIX, CLICKS_PREFIX, INFO_PREFIX } from '@/lib/redis'
+import { auth } from '@/auth'
+import {
+  redis,
+  REDIRECT_PREFIX,
+  CLICKS_PREFIX,
+  INFO_PREFIX,
+  CLICK_COUNTRY_PREFIX,
+  CLICK_DEVICE_PREFIX,
+  CLICK_EVENTS_PREFIX,
+  CLICK_REFERRER_PREFIX,
+} from '@/lib/redis'
+import { getLinkAnalytics } from '@/lib/analytics'
+import { cleanupLinkIndexes } from '@/lib/links'
 
-// GET /api/links/[slug] - Get link info and stats
+// GET /api/links/[slug] - Get link info and analytics
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ slug: string }> }
 ) {
   try {
     const { slug } = await params
-    
-    const [redirectUrl, info, clicks] = await Promise.all([
+
+    const [redirectUrl, info, clicks, analytics] = await Promise.all([
       redis.get<string>(`${REDIRECT_PREFIX}${slug}`),
       redis.hgetall(`${INFO_PREFIX}${slug}`),
       redis.get<number>(`${CLICKS_PREFIX}${slug}`),
+      getLinkAnalytics(slug),
     ])
 
     if (!redirectUrl) {
@@ -24,7 +37,9 @@ export async function GET(
       slug,
       url: redirectUrl,
       createdAt: (info?.createdAt as string) || new Date().toISOString(),
+      lastClickedAt: analytics.lastClickedAt,
       clicks: clicks || 0,
+      analytics,
     })
   } catch (error) {
     console.error('Error fetching link:', error)
@@ -32,26 +47,44 @@ export async function GET(
   }
 }
 
-// DELETE /api/links/[slug] - Delete a link
+// DELETE /api/links/[slug] - Delete a link owned by the authenticated user
 export async function DELETE(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ slug: string }> }
 ) {
   try {
+    const session = await auth()
+    const ownerId = session?.user?.email?.trim().toLowerCase()
+
+    if (!ownerId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const { slug } = await params
-    
-    // Check if link exists
-    const exists = await redis.exists(`${REDIRECT_PREFIX}${slug}`)
+    const [exists, info] = await Promise.all([
+      redis.exists(`${REDIRECT_PREFIX}${slug}`),
+      redis.hgetall<Record<string, string>>(`${INFO_PREFIX}${slug}`),
+    ])
+
     if (!exists) {
+      await cleanupLinkIndexes(slug, ownerId)
       return NextResponse.json({ error: 'Link not found' }, { status: 404 })
     }
 
-    // Delete all related keys
-    await Promise.all([
-      redis.del(`${REDIRECT_PREFIX}${slug}`),
-      redis.del(`${INFO_PREFIX}${slug}`),
-      redis.del(`${CLICKS_PREFIX}${slug}`),
-    ])
+    if (!info?.ownerId || info.ownerId !== ownerId) {
+      return NextResponse.json({ error: 'Link not found' }, { status: 404 })
+    }
+
+    const pipeline = redis.pipeline()
+    pipeline.del(`${REDIRECT_PREFIX}${slug}`)
+    pipeline.del(`${INFO_PREFIX}${slug}`)
+    pipeline.del(`${CLICKS_PREFIX}${slug}`)
+    pipeline.del(`${CLICK_EVENTS_PREFIX}${slug}`)
+    pipeline.del(`${CLICK_COUNTRY_PREFIX}${slug}`)
+    pipeline.del(`${CLICK_REFERRER_PREFIX}${slug}`)
+    pipeline.del(`${CLICK_DEVICE_PREFIX}${slug}`)
+    await pipeline.exec()
+    await cleanupLinkIndexes(slug, ownerId)
 
     return NextResponse.json({ success: true })
   } catch (error) {

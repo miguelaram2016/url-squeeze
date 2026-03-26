@@ -1,13 +1,7 @@
-import { Redis } from '@upstash/redis'
+import { redis } from './redis'
 import { isWhitelisted } from './whitelist'
 import { extractApiKey, validateApiKey, getRateLimitsForTier, ApiKeyTier } from './api-keys'
 
-const redis = new Redis({
-  url: process.env.UPSTASH_REDIS_REST_URL?.trim() || '',
-  token: process.env.UPSTASH_REDIS_REST_TOKEN?.trim() || '',
-})
-
-// Default IP-based limits (for unauthenticated requests)
 const DEFAULT_DAY_LIMIT = 100
 const DEFAULT_MIN_LIMIT = 10
 
@@ -20,33 +14,22 @@ export interface RateLimitResult {
   isApiKey?: boolean
 }
 
-/**
- * Check rate limit for a request, supporting both IP-based and API key auth.
- * API key auth gets tier-based limits; unauthenticated requests get IP-based limits.
- */
 export async function checkRateLimit(request: Request, ip: string): Promise<RateLimitResult> {
-  // Check whitelist first (IP-based)
   if (isWhitelisted(ip)) {
     return { allowed: true, remaining: 999, resetAt: Date.now() + 86400000, whitelisted: true }
   }
 
-  // Try API key auth first (takes precedence)
   const apiKey = extractApiKey(request)
   if (apiKey) {
     const keyData = await validateApiKey(apiKey)
     if (keyData) {
       return checkApiKeyRateLimit(apiKey, keyData.tier)
     }
-    // Invalid API key — fall through to IP-based (don't block, just don't grant API key privileges)
   }
 
-  // IP-based rate limit (for unauthenticated or invalid API key)
   return checkIpRateLimit(ip)
 }
 
-/**
- * Rate limit check for API key authenticated requests
- */
 async function checkApiKeyRateLimit(key: string, tier: ApiKeyTier): Promise<RateLimitResult> {
   const limits = getRateLimitsForTier(tier)
   const now = Date.now()
@@ -82,7 +65,6 @@ async function checkApiKeyRateLimit(key: string, tier: ApiKeyTier): Promise<Rate
     }
   }
 
-  // Increment counters
   const pipe = redis.pipeline()
   pipe.incr(minuteKey)
   pipe.expire(minuteKey, 60)
@@ -103,9 +85,6 @@ async function checkApiKeyRateLimit(key: string, tier: ApiKeyTier): Promise<Rate
   }
 }
 
-/**
- * Rate limit check for IP-based (unauthenticated) requests
- */
 async function checkIpRateLimit(ip: string): Promise<RateLimitResult> {
   const now = Date.now()
   const minuteKey = `ratelimit:min:${ip}`
@@ -151,14 +130,10 @@ async function checkIpRateLimit(ip: string): Promise<RateLimitResult> {
   }
 }
 
-/**
- * Legacy function for backwards compatibility with code that passes just IP
- */
 export async function checkRateLimitByIp(ip: string): Promise<RateLimitResult> {
   return checkIpRateLimit(ip)
 }
 
-// Get client IP from request
 export function getClientIP(request: Request): string {
   const forwarded = request.headers.get('x-forwarded-for')
   const realIp = request.headers.get('x-real-ip')

@@ -10,13 +10,12 @@
 
 - **URL Shortening** - Create short links with auto-generated or custom slugs
 - **QR Codes** - Generate QR codes for any link
-- **Click Analytics** - Track clicks with country, referrer, and device info
-- **Public Stats** - Shareable stats page for any link
-- **Dashboard** - Manage all your links in one place
-- **API Access** - Full REST API with rate-limited tiers
-- **Custom Domains** - White-label with your own domain
-- **Interstitial Pages** - Optional splash page for monetization
-- **Affiliate Links** - Auto-insert affiliate IDs for major retailers
+- **Click Analytics** - Track real click events with timestamp, country, referrer host, and device class
+- **Public Stats** - Shareable stats page for any link with recent event history
+- **Dashboard** - Manage your authenticated links and see live click totals
+- **API Access** - Generate API keys and use rate-limited endpoints
+- **Custom Domains** - API-level domain registration primitives are included
+- **Affiliate Links** - Auto-insert affiliate IDs for supported retailers when env vars are configured
 
 ## Tech Stack
 
@@ -129,11 +128,18 @@ Returns a base64 PNG QR code image.
 URL Squeeze supports multiple monetization methods:
 
 ### Affiliate Links
-Configure affiliate IDs in `src/lib/affiliate.ts`. URLs matching retailer patterns automatically get affiliate IDs appended.
+Set the optional `AFFILIATE_*` environment variables. When a destination matches a supported retailer, URL Squeeze stores the affiliate-tagged destination automatically.
 
 ### API Tiers
-- **Free**: 100 links/day, 10/minute
-- **Pro** (future): Higher limits + API key management
+- **Free**: 1000 requests/day, 10/minute
+- **Pro**: 10000 requests/day, 100/minute (rate-limit plumbing exists; billing/admin UX does not)
+
+Generate a key:
+```bash
+curl -X POST https://your-domain.com/api/keys \
+  -H "Content-Type: application/json" \
+  -d '{"email": "you@example.com"}'
+```
 
 ### Custom Domains
 Register custom domains via the API:
@@ -143,6 +149,11 @@ curl -X POST https://your-domain.com/api/domains \
   -H "Content-Type: application/json" \
   -d '{"domain": "links.yourbrand.com", "brandName": "Your Brand"}'
 ```
+
+> Note: custom-domain storage/management is wired, but host-based routing and polished setup UX are not finished yet.
+
+### Splash Pages
+A splash flag exists in link metadata, but the user-facing interstitial flow is not shipped yet. It is intentionally not marketed as a finished feature.
 
 ## Project Structure
 

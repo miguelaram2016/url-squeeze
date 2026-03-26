@@ -6,8 +6,8 @@ import { cn } from "@/lib/utils";
 const inter = Inter({ subsets: ['latin'], variable: '--font-sans' });
 
 export const metadata: Metadata = {
-  title: 'URL Squeeze — Shorten links, get analytics',
-  description: 'Minimal URL shortener with clean analytics and QR codes.',
+  title: 'URL Squeeze — Short links with honest analytics',
+  description: 'Minimal URL shortener with QR codes and real click-event analytics.',
 }
 
 export default function RootLayout({

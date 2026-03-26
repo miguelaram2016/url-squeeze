@@ -1,5 +1,6 @@
 'use client'
 
+import Image from 'next/image'
 import { useState } from 'react'
 import { QrCode, X, Download } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -85,9 +86,12 @@ export default function QRModal({ slug, url }: QRModalProps) {
                   <span className="animate-pulse text-muted-foreground">Loading...</span>
                 </div>
               ) : qrDataUrl ? (
-                <img 
-                  src={qrDataUrl} 
+                <Image
+                  src={qrDataUrl}
                   alt={`QR code for ${slug}`}
+                  width={192}
+                  height={192}
+                  unoptimized
                   className="w-48 h-48 rounded-lg border"
                 />
               ) : (
