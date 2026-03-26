@@ -1,4 +1,6 @@
 import { redis, getLinkKeys } from '@/lib/redis'
+import { recordClickEvent } from '@/lib/analytics'
+import { resolveSlugForHostname } from '@/lib/custom-domains'
 import { redirect } from 'next/navigation'
 import { headers } from 'next/headers'
 
@@ -15,19 +17,27 @@ function getCountry(ip: string): string | null {
 }
 
 export default async function RedirectPage({ params }: { params: Promise<{ slug: string }> }) {
-  const { slug } = await params
-  const { redirect: redirectKey, clicks: clicksKey } = getLinkKeys(slug)
+  const { slug: routeSlug } = await params
+  const h = await headers()
+  const host = h.get('x-forwarded-host') || h.get('host') || ''
+  const pathname = h.get('x-invoke-path') || `/${routeSlug}`
+  const resolvedSlug = await resolveSlugForHostname(host, pathname) || routeSlug
+  const { redirect: redirectKey, clicks: clicksKey } = getLinkKeys(resolvedSlug)
   const url = await redis.get<string>(redirectKey)
 
   if (!url) {
     redirect('/')
   }
 
-  const h = await headers()
   const ip = h.get('x-forwarded-for') || h.get('x-real-ip') || 'unknown'
-  getCountry(ip)
+  const country = getCountry(ip)
+  const referrer = h.get('referer')
+  const userAgent = h.get('user-agent')
 
-  await redis.incr(clicksKey)
+  await Promise.all([
+    redis.incr(clicksKey),
+    recordClickEvent(resolvedSlug, { country, referrer, userAgent }),
+  ])
 
   redirect(url)
 }

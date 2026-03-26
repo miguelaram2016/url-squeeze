@@ -1,8 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+const pipelineMock = {
+  lpush: vi.fn(),
+  ltrim: vi.fn(),
+  hincrby: vi.fn(),
+  hset: vi.fn(),
+  exec: vi.fn(),
+}
+
 const redisMock = {
   get: vi.fn(),
   incr: vi.fn(),
+  pipeline: vi.fn(() => pipelineMock),
 }
 const redirectMock = vi.fn((location: string) => {
   throw new Error(`REDIRECT:${location}`)
@@ -17,6 +26,19 @@ vi.mock('@/lib/redis', () => ({
   }),
 }))
 
+vi.mock('@/lib/analytics', () => ({
+  recordClickEvent: vi.fn().mockResolvedValue({
+    timestamp: new Date().toISOString(),
+    country: 'US',
+    referrer: 'Direct',
+    device: 'Desktop',
+  }),
+}))
+
+vi.mock('@/lib/custom-domains', () => ({
+  resolveSlugForHostname: vi.fn().mockResolvedValue(null),
+}))
+
 vi.mock('next/navigation', () => ({
   redirect: redirectMock,
 }))
@@ -29,8 +51,15 @@ describe('/[slug] redirect page', () => {
   beforeEach(() => {
     vi.resetModules()
     vi.clearAllMocks()
-    headersMock.mockResolvedValue(new Headers({ 'x-forwarded-for': '8.8.8.8' }))
+    headersMock.mockResolvedValue(
+      new Headers({
+        'x-forwarded-for': '8.8.8.8',
+        'x-forwarded-host': 'url-squeeze.vercel.app',
+        host: 'url-squeeze.vercel.app',
+      })
+    )
     redisMock.incr.mockResolvedValue(1)
+    pipelineMock.exec.mockResolvedValue([])
   })
 
   it('increments click counts and redirects to the destination URL', async () => {

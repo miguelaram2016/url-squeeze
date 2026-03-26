@@ -4,6 +4,7 @@ import {
   listCustomDomains,
   registerCustomDomain,
   removeCustomDomain,
+  setCustomDomainDefaultSlug,
   verifyCustomDomain,
 } from '@/lib/custom-domains'
 import { extractApiKey, validateApiKey } from '@/lib/api-keys'
@@ -29,7 +30,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { domain, brandName } = body
+    const { domain, brandName, defaultSlug } = body
 
     if (!domain || typeof domain !== 'string') {
       return NextResponse.json({ error: 'Domain is required' }, { status: 400 })
@@ -46,15 +47,26 @@ export async function POST(request: NextRequest) {
     }
 
     const data = await registerCustomDomain(domain, brandName, ownerId)
+    const finalDomain = typeof defaultSlug === 'string'
+      ? await setCustomDomainDefaultSlug(data.domain, defaultSlug, ownerId).then((result) => result || data)
+      : data
 
     return NextResponse.json({
-      message: data.status === 'verified' ? 'Custom domain ready' : 'Custom domain added. Finish DNS setup, then verify it.',
-      domain: data,
-      dnsInstructions: getDomainVerificationInstructions(data.domain),
+      message: finalDomain.status === 'verified' ? 'Custom domain ready' : 'Custom domain added. Finish DNS setup, then verify it.',
+      domain: finalDomain,
+      dnsInstructions: getDomainVerificationInstructions(finalDomain.domain),
     }, { status: 201 })
   } catch (error) {
     if (error instanceof Error && error.message === 'DOMAIN_TAKEN') {
       return NextResponse.json({ error: 'That domain is already claimed by another account.' }, { status: 409 })
+    }
+
+    if (error instanceof Error && error.message === 'SLUG_NOT_FOUND') {
+      return NextResponse.json({ error: 'Default slug not found.' }, { status: 404 })
+    }
+
+    if (error instanceof Error && error.message === 'SLUG_NOT_OWNED') {
+      return NextResponse.json({ error: 'Default slug must belong to you.' }, { status: 403 })
     }
 
     console.error('Error registering custom domain:', error)
@@ -70,7 +82,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
     }
 
-    const verifyDomain = new URL(request.url).searchParams.get('verify')
+    const url = new URL(request.url)
+    const verifyDomain = url.searchParams.get('verify')
+    const setDefaultFor = url.searchParams.get('setDefaultFor')
+    const defaultSlug = url.searchParams.get('defaultSlug')
+
     if (verifyDomain) {
       const domain = await verifyCustomDomain(verifyDomain, ownerId)
       if (!domain) {
@@ -78,6 +94,27 @@ export async function GET(request: NextRequest) {
       }
 
       return NextResponse.json({ domain, dnsInstructions: getDomainVerificationInstructions(domain.domain) })
+    }
+
+    if (setDefaultFor !== null) {
+      try {
+        const domain = await setCustomDomainDefaultSlug(setDefaultFor, defaultSlug || '', ownerId)
+        if (!domain) {
+          return NextResponse.json({ error: 'Domain not found' }, { status: 404 })
+        }
+
+        return NextResponse.json({ domain, dnsInstructions: getDomainVerificationInstructions(domain.domain) })
+      } catch (error) {
+        if (error instanceof Error && error.message === 'SLUG_NOT_FOUND') {
+          return NextResponse.json({ error: 'Default slug not found.' }, { status: 404 })
+        }
+
+        if (error instanceof Error && error.message === 'SLUG_NOT_OWNED') {
+          return NextResponse.json({ error: 'Default slug must belong to you.' }, { status: 403 })
+        }
+
+        throw error
+      }
     }
 
     const domains = await listCustomDomains(ownerId)
