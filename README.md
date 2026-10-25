@@ -134,12 +134,10 @@ Set the optional `AFFILIATE_*` environment variables. When a destination matches
 - **Free**: 1000 requests/day, 10/minute
 - **Pro**: 10000 requests/day, 100/minute (rate-limit plumbing exists; billing/admin UX does not)
 
-Generate a key:
-```bash
-curl -X POST https://your-domain.com/api/keys \
-  -H "Content-Type: application/json" \
-  -d '{"email": "you@example.com"}'
-```
+Generate and revoke keys from the signed-in **Dashboard → API keys** panel.
+`POST /api/keys` requires a valid GitHub sign-in session; the account email is
+read from that session, not from the request body. An optional `label` can be
+supplied. Anonymous email-based API-key registration is not supported.
 
 ### Custom Domains
 Register custom domains via the API:
