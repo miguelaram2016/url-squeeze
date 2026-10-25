@@ -7,7 +7,7 @@ import { DatabaseZap } from 'lucide-react'
 
 interface ClaimResult {
   slug: string
-  status: 'claimed' | 'already-owned' | 'missing' | 'owned-by-someone-else'
+  status: 'verification-required' | 'already-owned' | 'missing' | 'owned-by-someone-else'
 }
 
 export default function LegacyLinksPanel() {
@@ -39,12 +39,12 @@ export default function LegacyLinksPanel() {
     <Card>
       <CardHeader className="pb-3">
         <CardTitle className="text-sm flex items-center gap-2">
-          <DatabaseZap className="w-4 h-4" /> Legacy link claim
+          <DatabaseZap className="w-4 h-4" /> Legacy link recovery
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="rounded-lg border p-3 text-sm text-muted-foreground">
-          Policy: you can claim old links only when they have no owner yet. If a link is already attached to someone else, this tool refuses to touch it.
+          Checking a link does not change its destination or owner. Ownerless legacy links require independent ownership verification before they can be migrated; knowing a public short URL is not enough.
         </div>
 
         <textarea
@@ -55,7 +55,7 @@ export default function LegacyLinksPanel() {
         />
 
         <Button onClick={claim} disabled={loading}>
-          {loading ? 'Claiming…' : 'Claim links'}
+          {loading ? 'Checking…' : 'Check links'}
         </Button>
 
         {error && <p className="text-sm text-red-500">{error}</p>}
@@ -65,7 +65,12 @@ export default function LegacyLinksPanel() {
             {results.map((item) => (
               <div key={`${item.slug}-${item.status}`} className="flex items-center justify-between rounded-lg border p-3 text-sm">
                 <span className="font-mono">/{item.slug}</span>
-                <span className="text-muted-foreground">{item.status}</span>
+                <span className="text-muted-foreground">{{
+                  'verification-required': 'Verification required',
+                  'already-owned': 'Already yours',
+                  missing: 'Not found',
+                  'owned-by-someone-else': 'Owned by another account',
+                }[item.status]}</span>
               </div>
             ))}
           </div>
