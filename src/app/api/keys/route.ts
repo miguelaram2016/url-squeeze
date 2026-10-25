@@ -6,6 +6,10 @@ import { requireAuthenticatedOwnerId } from '@/lib/dashboard-auth'
 // POST /api/keys - Generate a new API key
 export async function POST(request: NextRequest) {
   try {
+    // An email in the request body is not proof of account ownership.
+    // Keys must always be issued to the authenticated session.
+    const email = await requireAuthenticatedOwnerId()
+
     // Rate limit key generation endpoint (IP-based)
     const ip = getClientIP(request)
     const { allowed, resetAt } = await checkRateLimit(request, ip)
@@ -24,13 +28,9 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json().catch(() => ({}))
-    const ownerId = await requireAuthenticatedOwnerId().catch(() => null)
-    const email = (ownerId || body.email || '').trim().toLowerCase()
-    const label = typeof body.label === 'string' ? body.label : null
-
-    if (!email) {
-      return NextResponse.json({ error: 'Email is required' }, { status: 400 })
-    }
+    const label = body && typeof body === 'object' && typeof body.label === 'string'
+      ? body.label
+      : null
 
     // Basic email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
