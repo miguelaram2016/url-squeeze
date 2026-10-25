@@ -19,30 +19,27 @@ export async function claimLegacyLinks(ownerId: string, rawSlugs: string[]) {
         return { slug, status: 'missing' as const }
       }
 
-      if (info?.ownerId && info.ownerId !== ownerId) {
+      // A publicly visible slug is not proof of ownership. Preserve unowned
+      // mappings until a separate, verified migration process is available.
+      if (!info?.ownerId) {
+        return { slug, status: 'verification-required' as const }
+      }
+
+      if (info.ownerId !== ownerId) {
         return { slug, status: 'owned-by-someone-else' as const }
       }
 
-      if (info?.ownerId === ownerId) {
-        await redis.sadd(getUserLinksKey(ownerId), slug)
-        return { slug, status: 'already-owned' as const }
-      }
-
-      await redis.hset(`${INFO_PREFIX}${slug}`, {
-        ...(info || {}),
-        ownerId,
-        claimedAt: new Date().toISOString(),
-      })
+      // Rebuild the dashboard index only after confirming recorded ownership.
       await redis.sadd(getUserLinksKey(ownerId), slug)
-
-      return { slug, status: 'claimed' as const }
+      return { slug, status: 'already-owned' as const }
     })
   )
 
   return {
     results,
     summary: {
-      claimed: results.filter((item) => item.status === 'claimed').length,
+      claimed: 0, // Kept for existing API consumers; self-service claiming is disabled.
+      requiresVerification: results.filter((item) => item.status === 'verification-required').length,
       alreadyOwned: results.filter((item) => item.status === 'already-owned').length,
       missing: results.filter((item) => item.status === 'missing').length,
       blocked: results.filter((item) => item.status === 'owned-by-someone-else').length,
